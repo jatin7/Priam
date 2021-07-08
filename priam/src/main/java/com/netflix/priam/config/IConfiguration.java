@@ -18,7 +18,10 @@ package com.netflix.priam.config;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.collect.ImmutableSet;
 import com.google.inject.ImplementedBy;
+import com.netflix.priam.scheduler.UnsupportedTypeException;
+import com.netflix.priam.tuner.GCType;
 import java.io.File;
 import java.util.Collections;
 import java.util.List;
@@ -39,6 +42,41 @@ public interface IConfiguration {
     /** @return Location to `cassandra.yaml`. */
     default String getYamlLocation() {
         return getCassHome() + "/conf/cassandra.yaml";
+    }
+
+    /**
+     * @return if Priam should tune the jvm.options file Note that Cassandra 2.1 OSS doesn't have
+     *     this file by default, but if someone has added it we can tune it.
+     */
+    default boolean supportsTuningJVMOptionsFile() {
+        return false;
+    }
+
+    /**
+     * @return Path to jvm.options file. This is used to pass JVM options to Cassandra. Note that
+     *     Cassandra 2.1 doesn't by default have this file, but if you add it We will allow you to
+     *     tune it.
+     */
+    default String getJVMOptionsFileLocation() {
+        return getCassHome() + "/conf/jvm.options";
+    }
+
+    /**
+     * @return Type of garbage collection mechanism to use for Cassandra. Supported values are
+     *     CMS,G1GC
+     */
+    default GCType getGCType() throws UnsupportedTypeException {
+        return GCType.CMS;
+    }
+
+    /** @return Set of JVM options to exclude/comment. */
+    default String getJVMExcludeSet() {
+        return StringUtils.EMPTY;
+    }
+
+    /** @return Set of JMV options to add/upsert */
+    default String getJVMUpsertSet() {
+        return StringUtils.EMPTY;
     }
 
     /** @return Path to Cassandra startup script */
@@ -1042,6 +1080,64 @@ public interface IConfiguration {
      */
     default String getMergedConfigurationDirectory() {
         return "/tmp/priam_configuration";
+    }
+
+    /**
+     * Return a list of property file paths from the configuration directory by Priam that should be
+     * tuned.
+     *
+     * @return the files paths
+     */
+    default ImmutableSet<String> getTunablePropertyFiles() {
+        return ImmutableSet.of();
+    }
+
+    /**
+     * @return true to use private IPs for seeds and insertion into the Token DB false otherwise.
+     */
+    default boolean usePrivateIP() {
+        return getSnitch().equals("org.apache.cassandra.locator.GossipingPropertyFileSnitch");
+    }
+
+    /** @return true to check is thrift listening on the rpc_port. */
+    default boolean checkThriftServerIsListening() {
+        return false;
+    }
+
+    /**
+     * @return true if Priam should skip deleting ingress rules for IPs not found in the token
+     *     database.
+     */
+    default boolean skipDeletingOthersIngressRules() {
+        return false;
+    }
+
+    /**
+     * @return true if Priam should skip updating ingress rules for ips found in the token database.
+     */
+    default boolean skipUpdatingOthersIngressRules() {
+        return false;
+    }
+
+    /** @return get the threshold at which point we might risk not getting our ingress rule set. */
+    default int getACLSizeWarnThreshold() {
+        return 500;
+    }
+
+    /**
+     * @return BackupsToCompress UNCOMPRESSED means compress backups only when the files are not
+     *     already compressed by Cassandra
+     */
+    default BackupsToCompress getBackupsToCompress() {
+        return BackupsToCompress.ALL;
+    }
+
+    /*
+     * @return true if Priam should skip ingress on an IP address from the token database unless it
+     *     can confirm that it is public
+     */
+    default boolean skipIngressUnlessIPIsPublic() {
+        return false;
     }
 
     /**

@@ -16,7 +16,9 @@
  */
 package com.netflix.priam.aws;
 
-import com.google.common.collect.Lists;
+import com.google.common.base.Joiner;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Sets;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import com.netflix.priam.config.IConfiguration;
@@ -27,10 +29,11 @@ import com.netflix.priam.identity.PriamInstance;
 import com.netflix.priam.scheduler.SimpleTimer;
 import com.netflix.priam.scheduler.Task;
 import com.netflix.priam.scheduler.TaskTimer;
-import java.util.HashSet;
-import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,16 +55,21 @@ public class UpdateSecuritySettings extends Task {
 
     private static final Random ran = new Random();
     private final IMembership membership;
-    private final IPriamInstanceFactory<PriamInstance> factory;
+    private final IPriamInstanceFactory factory;
+    private final IPConverter ipConverter;
 
     @Inject
     // Note: do not parameterized the generic type variable to an implementation as it confuses
     // Guice in the binding.
     public UpdateSecuritySettings(
-            IConfiguration config, IMembership membership, IPriamInstanceFactory factory) {
+            IConfiguration config,
+            IMembership membership,
+            IPriamInstanceFactory factory,
+            IPConverter ipConverter) {
         super(config);
         this.membership = membership;
         this.factory = factory;
+        this.ipConverter = ipConverter;
     }
 
     /**
@@ -70,39 +78,41 @@ public class UpdateSecuritySettings extends Task {
      */
     @Override
     public void execute() {
-        // if seed dont execute.
         int port = config.getSSLStoragePort();
-        List<String> acls = membership.listACL(port, port);
-        List<PriamInstance> instances = factory.getAllIds(config.getAppName());
+        ImmutableSet<String> currentAcl = membership.listACL(port, port);
+        Set<String> desiredAcl =
+                factory.getAllIds(config.getAppName())
+                        .stream()
+                        .map(i -> getIngressRule(i).orElse(null))
+                        .filter(Objects::nonNull)
+                        .map(ip -> ip + "/32")
+                        .collect(Collectors.toSet());
+        if (!config.skipDeletingOthersIngressRules()) {
+            Set<String> aclToRemove = Sets.difference(currentAcl, desiredAcl);
+            logger.info("ingress rules to delete: {}", Joiner.on(",").join(aclToRemove));
+            if (!aclToRemove.isEmpty()) {
+                membership.removeACL(aclToRemove, port, port);
+                firstTimeUpdated = true;
+            }
+        }
+        if (!config.skipUpdatingOthersIngressRules()) {
+            Set<String> aclToAdd = Sets.difference(desiredAcl, currentAcl);
+            logger.info("ingress rules to update: {}", Joiner.on(",").join(aclToAdd));
+            if (!aclToAdd.isEmpty()) {
+                int resultingSize = aclToAdd.size() + currentAcl.size();
+                if (resultingSize > config.getACLSizeWarnThreshold()) {
+                    logger.warn("We are trying to make too many ingress rules! {}", resultingSize);
+                }
+                membership.addACL(aclToAdd, port, port);
+                firstTimeUpdated = true;
+            }
+        }
+    }
 
-        // iterate to add...
-        Set<String> add = new HashSet<>();
-        List<PriamInstance> allInstances = factory.getAllIds(config.getAppName());
-        for (PriamInstance instance : allInstances) {
-            String range = instance.getHostIP() + "/32";
-            if (!acls.contains(range)) add.add(range);
-        }
-        if (add.size() > 0) {
-            membership.addACL(add, port, port);
-            firstTimeUpdated = true;
-        }
-
-        // just iterate to generate ranges.
-        List<String> currentRanges = Lists.newArrayList();
-        for (PriamInstance instance : instances) {
-            String range = instance.getHostIP() + "/32";
-            currentRanges.add(range);
-        }
-
-        // iterate to remove...
-        List<String> remove = Lists.newArrayList();
-        for (String acl : acls)
-            if (!currentRanges.contains(acl)) // if not found then remove....
-            remove.add(acl);
-        if (remove.size() > 0) {
-            membership.removeACL(remove, port, port);
-            firstTimeUpdated = true;
-        }
+    private Optional<String> getIngressRule(PriamInstance instance) {
+        return config.skipIngressUnlessIPIsPublic()
+                ? ipConverter.getPublicIP(instance)
+                : Optional.of(instance.getHostIP());
     }
 
     public static TaskTimer getTimer(InstanceIdentity id) {

@@ -1,4 +1,137 @@
 # Changelog
+## 2021/06/11 3.1.110
+(#953) Fixing integer overflow problem in restore
+
+## 2021/06/10 3.1.109
+(#951) Removing instances of methods that don't exist in guava 19.0
+
+## 2021/06/09 3.1.108
+(#950) Pinning guava to 19.0 which is the max 2.1 Cassandra can tolerate.
+
+## 2021/06/07 3.1.107
+(#949) Reverting back to previous behavior of omitting milliseconds in backup last modified times.
+
+## 2021/05/31 3.1.106
+(#947) Optionally skip compression when uploading backups.
+(#946) Allow operators to restrict ingress rules to public IPs exclusively.
+(#936) Optionally check to ensure Thrift server is listening on rpc_port before claiming it is healthy.
+
+## 2021/05/12 3.1.105
+(#939) Improve the configurability of setting ingress rules.
+
+## 2021/03/23 3.1.104
+Bugfix: Revert adding role_manager to cassandra 2.1 yaml due to incompatibility
+
+## 2021/03/17 3.1.103
+(#923) Store private ips in the token database when using GPFS. Plus substantial refactoring of token generation logic.
+
+## 2020/09/30 3.1.100
+(#907, #909) Stop explicitly filtering OpsCenter keyspace when backing up. Remove more noisy log statements.
+
+## 2020/09/08 3.1.99
+(#903) Remove noisy log statements from CassandraAdmin.
+
+## 2020/08/11 3.1.98
+(#900) Throw when gossip unanimously says token is already owned by a live node.
+
+## 2020/07/15 3.1.97
+(#898) Make BackupVerificationTask log and emit when there is no verified backup within SLO. Cease requiring the backup to be fully in S3.
+
+## 2020/07/13 3.1.96
+(#894) Fix the inferTokenOwnership information. This will provide all the details to the caller method so they can make decision rather than throwing any exception. 
+
+## 2020/07/02/ 3.1.95
+(#890) Adding an exception in the replace-ip path when a node attempts to bootstrap to an existing token because of a stale state. 
+
+## 2020/06/29 3.1.94
+(#888) Porting PropertiesFileTuner to the 3.x branch.
+
+## 2020/05/19 3.1.93
+Re-releasing 3.1.92
+
+## 2020/05/19 3.1.92
+(#877) Fixing BackupServletV2 endpoints that were broken because of an underlying dependency change from the release 3.1.89.
+
+## 2020/05/18 3.1.91
+(#871) Fixing PriamConfig endpoints that were broken because of an underlying dependency change from the last release.
+
+## 2020/05/05 3.1.90
+This is a re-release of 3.1.89 since that release failed due to a test that failed because of a concurrent execution on another release train.
+
+## 2020/05/05 3.1.89
+(#859, #863) Fixing the bug in the backup verification strategy to only page when there is no valid backup in the specified date range (SLO window) And also disable lifecyle rule for backup if backup v1 is disabled.
+
+## 2020/04/22 3.1.88
+(#848) Modifying the backup verification strategy to verify all unverified backups in the specified date range vs the old implementation that verified the latest backup in the specified date range.
+
+## 2020/02/21 3.1.87
+(#842, #839) Implementation of a filter for Backup Notification. The filter can be controlled using the configuration "priam.backupNotifyComponentIncludeList"
+
+## 2019/10/24 3.1.86
+(#835) Move flush and compactions to Service Layer. This allows us to "hot" reload the jobs when configurations change.
+(#835) Send SNAPSHOT_VERIFIED message when a snapshot is verified and ready to be consumed by downward dependencies.
+
+## 2019/08/23 3.1.85
+(#832) Travis build fails for oraclejdk8. Migration to openjdk8
+
+## 2019/08/23 3.1.84
+(#827) Removing functionality of creating incremental manifest file in backup V1 as it is not used. 
+(#827) Bug fix: When meta file do not exist for TTL in backup v2 we should not be throwing NPE. 
+(#827) Bug fix: Fix X-Y-Z issue using gossip status information instead of gossip state. Note that gossip status is (JOINING/LEAVING/NORMAL) while gossip state is (UP/DOWN). Gossip state is calculated individually by all the Cassandra instances using gossip status. 
+
+## 2019/06/07 3.1.83
+(#825): Rollback the fixes to use Gossip info while grabbing dead and pre-assigned tokens. Gossip info doesn't not reflect the correct cluster state always. A node marked with status as NORMAL in the Gossip info could actually be down. This can be checked using nt ring. This change will unblock the nodes from joining the ring.
+
+## 2019/05/28 3.1.82
+(#821): Backport Configuring JVM Options for Cassandra using jvm.options if your Cassandra supports jvm.options, you can enable it by setting Priam.jvm.options.supported, then the options are the same as 3.11
+(#822): Use replace_address instead of replace_address_first_boot. replace_address always try to bootstrap Cassandra in replace mode even when the previous bootstrap is successful. replace_address_first_boot tries to bootstrap normally if the node already bootstrapped successfully.
+
+## 2019/05/14 3.1.81
+(#817) Changing the list in TokenRetrievalUtils to use wildcards.
+
+## 2019/05/13 3.1.80
+(#814) Priam will check Cassandra gossip information while grabbing pre-assigned token to decide if it should start Cassandra in bootstrap mode or in replace mode.
+(#814) At most 3 random nodes are used to get the gossip information.
+(#814) Moved token owner inferring logic based on Cassandra gossip into a util class.
+(#814) Refactored InstanceIdentity.init() method.
+
+## 2019/04/29 3.1.79
+(#810) Update the backup service based on configuration changes.
+(#811) Expose the list of files from backups as API call.
+(#808) Run TTL for backup based on a simple timer to avoid S3 delete API call throttle.
+(#808) API to clear the local filesystem cache.
+(#811) Bug fix: Increment backup failure metric when no backup is found.
+(#808) Bug fix: No backup verification job during restore.
+
+## 2019/03/19 3.1.78
+(#795) Fix X->Y->Z issue. Replace nodes when gossip actually converges.
+
+## 2019/03/13 3.1.77
+(#801) Write-thru cache in AbstractFileSystem.
+(#801) Take care of issue - C* snapshot w.r.t. filesystem is not "sync" in nature.
+
+## 2019/03/05 3.1.76
+(#799) Fix for forgotten file
+(#799) Use older API for prefix filtering (backup TTL), if prefix is available.
+(#799) Send notifications only when we upload a file.
+
+## 2019/02/27 3.1.75
+(#792) S3 - BucketLifecycleConfiguration has `prefix` method removed from latest library.
+
+## 2019/02/27 3.1.74
+(#790) BackupServlet had an API call of backup status which was producing output which was not JSON.
+
+## 2019/02/15 3.1.73
+(#773): BackupVerificationService
+(#779): Put a cache for the getObjectExist API call to S3. This will help keep the cost of this call at bay.
+(#779): Put a rate limiter for getObjectExist API call to S3 so we can limit the no. of calls.
+(#782): Provide an override method to force Priam to replace a particular IP.
+
+## 2019/02/08 3.1.72
+(#778)Do not check existence of file if it is not SST_V2. S3 may decide to slow down and throw an error. Best not to do s3 object check (API) if it is not required.
+
+## 2019/02/07 3.1.71
+(#774) Do not throw NPE when no backup is found for the requested date.
 
 ## 2019/01/30 3.1.70
 (#765) Add metrics on CassandraConfig resource calls

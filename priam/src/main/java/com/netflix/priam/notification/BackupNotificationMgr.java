@@ -16,10 +16,14 @@ package com.netflix.priam.notification;
 import com.amazonaws.services.sns.model.MessageAttributeValue;
 import com.google.inject.Inject;
 import com.netflix.priam.backup.AbstractBackupPath;
+import com.netflix.priam.backup.BackupRestoreException;
+import com.netflix.priam.backup.BackupVerificationResult;
+import com.netflix.priam.config.IBackupRestoreConfig;
 import com.netflix.priam.config.IConfiguration;
+import com.netflix.priam.identity.InstanceIdentity;
 import com.netflix.priam.identity.config.InstanceInfo;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import org.apache.commons.lang3.StringUtils;
 import org.codehaus.jettison.json.JSONException;
 import org.codehaus.jettison.json.JSONObject;
 import org.slf4j.Logger;
@@ -35,52 +39,103 @@ public class BackupNotificationMgr implements EventObserver<BackupEvent> {
     public static final String SUCCESS_VAL = "success", FAILED_VAL = "failed", STARTED = "started";
     private static final Logger logger = LoggerFactory.getLogger(BackupNotificationMgr.class);
     private final IConfiguration config;
+    private final IBackupRestoreConfig backupRestoreConfig;
     private final INotificationService notificationService;
     private final InstanceInfo instanceInfo;
+    private final InstanceIdentity instanceIdentity;
+    private final Set<AbstractBackupPath.BackupFileType> notifiedBackupFileTypesSet;
+    private String notifiedBackupFileTypes;
 
     @Inject
     public BackupNotificationMgr(
             IConfiguration config,
+            IBackupRestoreConfig backupRestoreConfig,
             INotificationService notificationService,
-            InstanceInfo instanceInfo) {
+            InstanceInfo instanceInfo,
+            InstanceIdentity instanceIdentity) {
         this.config = config;
+        this.backupRestoreConfig = backupRestoreConfig;
         this.notificationService = notificationService;
         this.instanceInfo = instanceInfo;
+        this.instanceIdentity = instanceIdentity;
+        this.notifiedBackupFileTypesSet = new HashSet<>();
+        this.notifiedBackupFileTypes = "";
+    }
+
+    public void notify(BackupVerificationResult backupVerificationResult) {
+        JSONObject jsonObject = new JSONObject();
+        try {
+            jsonObject.put("s3bucketname", this.config.getBackupPrefix());
+            jsonObject.put("s3clustername", config.getAppName());
+            jsonObject.put("s3namespace", backupVerificationResult.remotePath);
+            jsonObject.put("region", instanceInfo.getRegion());
+            jsonObject.put("rack", instanceInfo.getRac());
+            jsonObject.put("token", instanceIdentity.getInstance().getToken());
+            jsonObject.put("backuptype", "SNAPSHOT_VERIFIED");
+            jsonObject.put("snapshotInstant", backupVerificationResult.snapshotInstant);
+            // SNS Attributes for filtering messages. Cluster name and backup file type.
+            Map<String, MessageAttributeValue> messageAttributes =
+                    getMessageAttributes(AbstractBackupPath.BackupFileType.SNAPSHOT_VERIFIED);
+
+            this.notificationService.notify(jsonObject.toString(), messageAttributes);
+        } catch (JSONException exception) {
+            logger.error(
+                    "JSON exception during generation of notification for snapshot verification: {}. Msg: {}",
+                    backupVerificationResult,
+                    exception.getLocalizedMessage());
+        }
+    }
+
+    private Map<String, MessageAttributeValue> getMessageAttributes(
+            AbstractBackupPath.BackupFileType backupFileType) {
+        // SNS Attributes for filtering messages. Cluster name and backup file type.
+        Map<String, MessageAttributeValue> messageAttributes = new HashMap<>();
+        messageAttributes.putIfAbsent(
+                "s3clustername",
+                new MessageAttributeValue()
+                        .withDataType("String")
+                        .withStringValue(config.getAppName()));
+        messageAttributes.putIfAbsent(
+                "backuptype",
+                new MessageAttributeValue()
+                        .withDataType("String")
+                        .withStringValue(backupFileType.name()));
+        return messageAttributes;
     }
 
     private void notify(AbstractBackupPath abp, String uploadStatus) {
         JSONObject jsonObject = new JSONObject();
         try {
-            jsonObject.put("s3bucketname", this.config.getBackupPrefix());
-            jsonObject.put("s3clustername", abp.getClusterName());
-            jsonObject.put("s3namespace", abp.getRemotePath());
-            jsonObject.put("keyspace", abp.getKeyspace());
-            jsonObject.put("cf", abp.getColumnFamily());
-            jsonObject.put("region", abp.getRegion());
-            jsonObject.put("rack", instanceInfo.getRac());
-            jsonObject.put("token", abp.getToken());
-            jsonObject.put("filename", abp.getFileName());
-            jsonObject.put("uncompressfilesize", abp.getSize());
-            jsonObject.put("compressfilesize", abp.getCompressedFileSize());
-            jsonObject.put("backuptype", abp.getType().name());
-            jsonObject.put("uploadstatus", uploadStatus);
-            jsonObject.put("compression", abp.getCompression().name());
-            jsonObject.put("encryption", abp.getEncryption().name());
+            Set<AbstractBackupPath.BackupFileType> updatedNotifiedBackupFileTypeSet =
+                    getUpdatedNotifiedBackupFileTypesSet(this.notifiedBackupFileTypes);
+            if (updatedNotifiedBackupFileTypeSet.isEmpty()
+                    || updatedNotifiedBackupFileTypeSet.contains(abp.getType())) {
+                jsonObject.put("s3bucketname", this.config.getBackupPrefix());
+                jsonObject.put("s3clustername", abp.getClusterName());
+                jsonObject.put("s3namespace", abp.getRemotePath());
+                jsonObject.put("keyspace", abp.getKeyspace());
+                jsonObject.put("cf", abp.getColumnFamily());
+                jsonObject.put("region", abp.getRegion());
+                jsonObject.put("rack", instanceInfo.getRac());
+                jsonObject.put("token", abp.getToken());
+                jsonObject.put("filename", abp.getFileName());
+                jsonObject.put("uncompressfilesize", abp.getSize());
+                jsonObject.put("compressfilesize", abp.getCompressedFileSize());
+                jsonObject.put("backuptype", abp.getType().name());
+                jsonObject.put("uploadstatus", uploadStatus);
+                jsonObject.put("compression", abp.getCompression().name());
+                jsonObject.put("encryption", abp.getEncryption().name());
 
-            // SNS Attributes for filtering messages. Cluster name and backup file type.
-            Map<String, MessageAttributeValue> messageAttributes = new HashMap<>();
-            messageAttributes.putIfAbsent(
-                    "s3clustername",
-                    new MessageAttributeValue()
-                            .withDataType("String")
-                            .withStringValue(abp.getClusterName()));
-            messageAttributes.putIfAbsent(
-                    "backuptype",
-                    new MessageAttributeValue()
-                            .withDataType("String")
-                            .withStringValue(abp.getType().name()));
-
-            this.notificationService.notify(jsonObject.toString(), messageAttributes);
+                // SNS Attributes for filtering messages. Cluster name and backup file type.
+                Map<String, MessageAttributeValue> messageAttributes =
+                        getMessageAttributes(abp.getType());
+                this.notificationService.notify(jsonObject.toString(), messageAttributes);
+            } else {
+                logger.debug(
+                        "BackupFileType {} is not in the list of notified component types {}",
+                        abp.getType().name(),
+                        StringUtils.join(notifiedBackupFileTypesSet, ", "));
+            }
         } catch (JSONException exception) {
             logger.error(
                     "JSON exception during generation of notification for upload {}.  Local file {}. Ignoring to continue with rest of backup.  Msg: {}",
@@ -88,6 +143,31 @@ public class BackupNotificationMgr implements EventObserver<BackupEvent> {
                     abp.getFileName(),
                     exception.getLocalizedMessage());
         }
+    }
+
+    private Set<AbstractBackupPath.BackupFileType> getUpdatedNotifiedBackupFileTypesSet(
+            String notifiedBackupFileTypes) {
+        String propertyValue = this.backupRestoreConfig.getBackupNotifyComponentIncludeList();
+        if (!notifiedBackupFileTypes.equals(propertyValue)) {
+            logger.info(
+                    String.format(
+                            "Notified BackupFileTypes changed from %s to %s",
+                            this.notifiedBackupFileTypes, propertyValue));
+            this.notifiedBackupFileTypesSet.clear();
+            this.notifiedBackupFileTypes =
+                    this.backupRestoreConfig.getBackupNotifyComponentIncludeList();
+            if (!StringUtils.isBlank(this.notifiedBackupFileTypes)) {
+                for (String s : this.notifiedBackupFileTypes.split(",")) {
+                    try {
+                        AbstractBackupPath.BackupFileType backupFileType =
+                                AbstractBackupPath.BackupFileType.fromString(s.trim());
+                        notifiedBackupFileTypesSet.add(backupFileType);
+                    } catch (BackupRestoreException ignored) {
+                    }
+                }
+            }
+        }
+        return Collections.unmodifiableSet(this.notifiedBackupFileTypesSet);
     }
 
     @Override

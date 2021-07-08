@@ -50,8 +50,13 @@ public class CassandraProcessManager implements ICassandraProcess {
     }
 
     protected void setEnv(Map<String, String> env) {
-        env.put("HEAP_NEWSIZE", config.getHeapNewSize());
-        env.put("MAX_HEAP_SIZE", config.getHeapSize());
+        // If we can tune a jvm.options file instead of setting these
+        // environment variables we prefer to set heap sizes that way
+        if (!config.supportsTuningJVMOptionsFile()) {
+            env.put("HEAP_NEWSIZE", config.getHeapNewSize());
+            env.put("MAX_HEAP_SIZE", config.getHeapSize());
+        }
+
         env.put("DATA_DIR", config.getDataFileLocation());
         env.put("COMMIT_LOG_DIR", config.getCommitLogLocation());
         env.put("LOCAL_BACKUP_DIR", config.getBackupLocation());
@@ -60,6 +65,7 @@ public class CassandraProcessManager implements ICassandraProcess {
         env.put("LOCAL_JMX", config.enableRemoteJMX() ? "no" : "yes");
         env.put("MAX_DIRECT_MEMORY", config.getMaxDirectMemory());
         env.put("CASS_LOGS_DIR", config.getLogDirLocation());
+        env.put("CASSANDRA_LOG_DIR", config.getLogDirLocation());
     }
 
     public void start(boolean join_ring) throws IOException {

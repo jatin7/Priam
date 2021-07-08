@@ -17,83 +17,123 @@
 
 package com.netflix.priam.backupv2;
 
+import com.google.common.collect.ImmutableList;
+import com.google.common.truth.Truth;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
-import com.netflix.priam.backup.BRTestModule;
-import com.netflix.priam.backup.BackupVerification;
-import com.netflix.priam.backup.BackupVerificationResult;
-import com.netflix.priam.backup.BackupVersion;
-import com.netflix.priam.backup.Status;
-import com.netflix.priam.config.IConfiguration;
+import com.netflix.priam.backup.*;
 import com.netflix.priam.health.InstanceState;
+import com.netflix.priam.merics.Metrics;
+import com.netflix.priam.notification.BackupNotificationMgr;
 import com.netflix.priam.scheduler.UnsupportedTypeException;
 import com.netflix.priam.utils.DateUtil.DateRange;
+import com.netflix.spectator.api.Counter;
+import com.netflix.spectator.api.Registry;
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
-import mockit.Expectations;
-import mockit.Mock;
-import mockit.MockUp;
-import mockit.Mocked;
-import org.junit.Assert;
+import javax.inject.Inject;
+import mockit.*;
+import org.junit.Before;
 import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
 
 /** Created by aagrawal on 2/1/19. */
 public class TestBackupVerificationTask {
-    private static BackupVerificationTask backupVerificationService;
-    private static IConfiguration configuration;
-    private static BackupVerification backupVerification;
+    @Inject private BackupVerificationTask backupVerificationService;
+    private Counter badVerifications;
+    @Mocked private BackupVerification backupVerification;
+    @Mocked private BackupNotificationMgr backupNotificationMgr;
 
-    public TestBackupVerificationTask() {
+    @Before
+    public void setUp() {
         new MockBackupVerification();
+        new MockBackupNotificationMgr();
         Injector injector = Guice.createInjector(new BRTestModule());
-        if (configuration == null) configuration = injector.getInstance(IConfiguration.class);
-        if (backupVerificationService == null)
-            backupVerificationService = injector.getInstance(BackupVerificationTask.class);
-        if (backupVerification == null)
-            backupVerification = injector.getInstance(BackupVerification.class);
+        injector.injectMembers(this);
+        badVerifications =
+                injector.getInstance(Registry.class)
+                        .counter(Metrics.METRIC_PREFIX + "backup.verification.failure");
     }
 
-    static class MockBackupVerification extends MockUp<BackupVerification> {
-        public static boolean failCall = false;
-        public static boolean throwError = false;
+    private static final class MockBackupVerification extends MockUp<BackupVerification> {
+        private static boolean throwError;
+        private static ImmutableList<BackupVerificationResult> results;
+
+        public static void setResults(BackupVerificationResult... newResults) {
+            results = ImmutableList.copyOf(newResults);
+        }
+
+        public static void shouldThrow(boolean newThrowError) {
+            throwError = newThrowError;
+        }
+
+        @Mock
+        public List<BackupVerificationResult> verifyAllBackups(
+                BackupVersion backupVersion, DateRange dateRange)
+                throws UnsupportedTypeException, IllegalArgumentException {
+            if (throwError) throw new IllegalArgumentException("DummyError");
+            return results;
+        }
 
         @Mock
         public Optional<BackupVerificationResult> verifyBackup(
                 BackupVersion backupVersion, boolean force, DateRange dateRange)
                 throws UnsupportedTypeException, IllegalArgumentException {
             if (throwError) throw new IllegalArgumentException("DummyError");
-
-            if (failCall) return Optional.of(new BackupVerificationResult());
-
-            BackupVerificationResult result = new BackupVerificationResult();
-            result.valid = true;
-            return Optional.of(result);
+            return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
         }
     }
 
+    private static final class MockBackupNotificationMgr extends MockUp<BackupNotificationMgr> {}
+
     @Test
-    public void throwError() throws Exception {
-        MockBackupVerification.throwError = true;
-        MockBackupVerification.failCall = false;
-        try {
-            backupVerificationService.execute();
-            Assert.assertTrue(false);
-        } catch (IllegalArgumentException e) {
-            if (!e.getMessage().equalsIgnoreCase("DummyError")) Assert.assertTrue(false);
-        }
+    public void throwError() {
+        MockBackupVerification.shouldThrow(true);
+        Assertions.assertThrows(
+                IllegalArgumentException.class, () -> backupVerificationService.execute());
     }
 
     @Test
-    public void failCalls() throws Exception {
-        MockBackupVerification.throwError = false;
-        MockBackupVerification.failCall = true;
+    public void validBackups() throws Exception {
+        MockBackupVerification.shouldThrow(false);
+        MockBackupVerification.setResults(getValidBackupVerificationResult());
         backupVerificationService.execute();
+        Truth.assertThat(badVerifications.count()).isEqualTo(0);
+        new Verifications() {
+            {
+                backupNotificationMgr.notify((BackupVerificationResult) any);
+                times = 1;
+            }
+        };
     }
 
     @Test
-    public void normalOperation() throws Exception {
-        MockBackupVerification.throwError = false;
-        MockBackupVerification.failCall = false;
+    public void invalidBackups() throws Exception {
+        MockBackupVerification.shouldThrow(false);
+        MockBackupVerification.setResults(getInvalidBackupVerificationResult());
         backupVerificationService.execute();
+        Truth.assertThat(badVerifications.count()).isEqualTo(0);
+        new Verifications() {
+            {
+                backupNotificationMgr.notify((BackupVerificationResult) any);
+                times = 1;
+            }
+        };
+    }
+
+    @Test
+    public void noBackups() throws Exception {
+        MockBackupVerification.shouldThrow(false);
+        MockBackupVerification.setResults();
+        backupVerificationService.execute();
+        Truth.assertThat(badVerifications.count()).isEqualTo(1);
+        new Verifications() {
+            {
+                backupNotificationMgr.notify((BackupVerificationResult) any);
+                maxTimes = 0;
+            }
+        };
     }
 
     @Test
@@ -105,5 +145,42 @@ public class TestBackupVerificationTask {
             }
         };
         backupVerificationService.execute();
+        Truth.assertThat(badVerifications.count()).isEqualTo(0);
+        new Verifications() {
+            {
+                backupVerification.verifyBackup((BackupVersion) any, anyBoolean, (DateRange) any);
+                maxTimes = 0;
+            }
+
+            {
+                backupVerification.verifyAllBackups((BackupVersion) any, (DateRange) any);
+                maxTimes = 0;
+            }
+
+            {
+                backupNotificationMgr.notify((BackupVerificationResult) any);
+                maxTimes = 0;
+            }
+        };
+    }
+
+    private static BackupVerificationResult getInvalidBackupVerificationResult() {
+        BackupVerificationResult result = new BackupVerificationResult();
+        result.valid = false;
+        result.manifestAvailable = true;
+        result.remotePath = "some_random";
+        result.filesMatched = 123;
+        result.snapshotInstant = Instant.EPOCH;
+        return result;
+    }
+
+    private static BackupVerificationResult getValidBackupVerificationResult() {
+        BackupVerificationResult result = new BackupVerificationResult();
+        result.valid = true;
+        result.manifestAvailable = true;
+        result.remotePath = "some_random";
+        result.filesMatched = 123;
+        result.snapshotInstant = Instant.EPOCH;
+        return result;
     }
 }

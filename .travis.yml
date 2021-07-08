@@ -1,19 +1,19 @@
 language: java
 jdk:
-- oraclejdk8
-after_success:
-  - bash <(curl -s https://codecov.io/bash)
+- openjdk8
 sudo: false
-install: ./installViaTravis.sh
+install: "./installViaTravis.sh"
 script:
-  - ./buildViaTravis.sh
-  - ./gradlew codeCoverageReport
+- "./buildViaTravis.sh"
+- "./gradlew codeCoverageReport"
 cache:
   directories:
-  - $HOME/.gradle
+  - "$HOME/.gradle"
 env:
   global:
-  - secure: p81PYYYYhjhp1uJHOoT9EfUia8qPMphdykCxQannWMVvIFKXF5ibi/Qd52OUIYuJT9Q5MN9GhlwCtolxmCZu44YMLi99LsoITAv6n08LAFEux1oAOXmGt3ZBllvBFtlW+jlQ5lKmbuuPue3RVbTaWzL3KCCaYQ4uKW/sP31bXic=
-  - secure: AYWrIC/1JqAVyLhzlDhL163LypPpq7AliDltfey9emxzS73vB5VrGTHG45Em7xdkHN0kc1vED+UFsYks7ym1olXZPsbW29R0Gfd+p1VxCE3Cbhj7x690xNC3wIlSgWGpbgiPs7vhVN80OuNgnpz9/+WRFpKAVrYrcisbvugsDqk=
-  - secure: Ai75crFDh3imkmxzNQDXIwK49appZuZTrsmdZzgH1Zl/nD33RoZPWUWeeHP0yJoicNqZlU6aEXJnk8JGDWtPIT3VNO7Rsey+yrw041rHNV6bFGpwGdQgKv5CUhRHK+gShgFgnME5THCPKvK51+li1feIoByoYVmEn0gmvcxL0yM=
-  - secure: ZqBsyaFMBz3cqM7UHq0IRotTPaoBNUHrC7buiAqqhZ5JNM48a2m7ORuu/SENPFfr6xOT5KylCrvT6eD1bkQi5S2jT9Qyoju/9H/hXaAUG89dhwKOxqEE11ZGKF8DlNO/jcmchVnIkgWfEjVKc7vCAww1Y8lgxhyj4gRtnln+F+o=
+  - secure: JUZT8CmNPjpmKguIioCY0quM5ZGzO03fv7YMDZqR909WbfiX57ArPJOorD9U1ri8REiRjhIe5dTgQMNtar6i1uJj0EwhCIahRn+CNJhtHBxA1siX3/E8HU8ANirLLziBQlWnnjwKlGoUKw04plMLkaA9Ybn3WV9sdi/kVHRpI2Y=
+  - secure: wxVMsVmsKEuksiQlkm47gAH6Pu5lM3zwWVXJw1eUf9zTqLVwqomuQ19Bgv2ZDcoWNBdcfRouhV98uCclCgFD3tPTVfJ3GSrXhpQLstGihNRtZE5EmEVj8rephVa4H1g0BxzuhbFCgV6VyQWECvAYpyyutk6+ygeS7uhjWtUCTus=
+  - secure: wDpYNAJGRtlnbJUfmnmmTSH5+TTf5AccjbaVa1NVblQPb0gdupEo8lGPeKGyaAWtteHlC+ih5nP6nh2geoWc6Svfv7fXRdffVyCF+WLrTPKvPOgC1A9IgrbVbjKRJv3Lqx+i6vYcRc+EJ3Bn9Z5AVACY4ag9KfDr5Xc1xmoJK6U=
+  - secure: XP08P6WaX92eH0lziOoWAAPz0HDpg8RjuxgNQBaQ5NmgyjRypxMnjro2Uqfcivn0tjV8tFQNzGrx2Y1LaC3w1ZJiINuLbSKWNfC/NP/zlMwTfQBwnwx0brmn5u/OwpqmU6l+nrMNyXKKR4hhH47O2ZD3ynrRAivt5tgDo/6xp9Y=
+  - secure: Gf497SakGlRoyYAqNrto/U+wrfJ9wtUzStwV0uac5CEJoDNN1DG3LA+HmRYgubwXZU3VKb/2BPEyflNV+LOWW54CkWu5Syw4i//iL+FEHv2eDR82NyvOcl11BtmUDLW/G+iBV5J3DlGTSmbgfC195kAYhozxx5FF+UVIYisS0Yc=
+  - secure: ky97xfe8gq2KqexRhLvaaEI85H/6HJ3iXh+z8eHnRHQpCkL4azVripdaUXwMj5H5EotWevB1nZVdttX/ZU5VIfkyA7H7fgWT9I17o4p8JKA8VItzUAIWopA4pUw2moxKiqhJZ8szqBCeEk5qgbUJyFbsAsHrTmoqSI/8u3WaL0U=
